@@ -134,6 +134,8 @@
         private System.Windows.Forms.Button btnExaminar;
         private System.Windows.Forms.Label lblTabla;
         private System.Windows.Forms.ComboBox cmbTablas;
+
+       
     }
 }
 

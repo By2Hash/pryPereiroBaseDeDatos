@@ -40,7 +40,6 @@ namespace pryPereiroBaseDeDatos
                     cmbDatabases.Items.Add(ruta);
                     cmbDatabases.Text = ruta;
 
-                    
                     LoadTablesIntoCombo(ruta);
                 }
             }
@@ -51,19 +50,36 @@ namespace pryPereiroBaseDeDatos
             cmbTablas.Items.Clear();
 
             var extension = Path.GetExtension(rutaArchivo).ToLower();
-            var cadenaConexion = string.Empty;
+            string cadenaConexion = null;
 
+            // Proveedores a intentar según la extensión
+            var providersToTry = new List<string>();
             if (extension == ".mdb")
             {
-                cadenaConexion = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" + rutaArchivo + ";";
+                // Jet primera opción para .mdb
+                providersToTry.Add("Microsoft.Jet.OLEDB.4.0");
+                // ACE también puede abrir .mdb si está instalado
+                providersToTry.Add("Microsoft.ACE.OLEDB.16.0");
+                providersToTry.Add("Microsoft.ACE.OLEDB.12.0");
             }
             else if (extension == ".accdb")
             {
-                cadenaConexion = "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=" + rutaArchivo + ";";
+                // ACE para .accdb
+                providersToTry.Add("Microsoft.ACE.OLEDB.16.0");
+                providersToTry.Add("Microsoft.ACE.OLEDB.12.0");
             }
             else
             {
                 MessageBox.Show("Tipo de archivo no soportado.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            // Buscar un proveedor que funcione
+            cadenaConexion = TryFindWorkingConnectionString(rutaArchivo, providersToTry);
+
+            if (string.IsNullOrEmpty(cadenaConexion))
+            {
+                MessageBox.Show("No se encontró un proveedor OLEDB disponible para abrir el archivo.\nAsegúrese de tener instalado el proveedor ACE/Jet correspondiente (32/64 bits según su aplicación).", "Proveedor no disponible", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
@@ -78,11 +94,10 @@ namespace pryPereiroBaseDeDatos
                     foreach (DataRow row in schema.Rows)
                     {
                         var tableType = row["TABLE_TYPE"]?.ToString();
-                      
-                        if (string.Equals(tableType, "TABLE", StringComparison.OrdinalIgnoreCase))
+                        if (string.Equals(tableType, "TABLE", StringComparison.OrdinalIgnoreCase) || string.Equals(tableType, "VIEW", StringComparison.OrdinalIgnoreCase))
                         {
                             var tableName = row["TABLE_NAME"]?.ToString();
-                            if (!string.IsNullOrEmpty(tableName))
+                            if (!string.IsNullOrEmpty(tableName) && !tableName.StartsWith("MSys"))
                             {
                                 cmbTablas.Items.Add(tableName);
                             }
@@ -101,6 +116,29 @@ namespace pryPereiroBaseDeDatos
             {
                 MessageBox.Show($"Error al obtener tablas:\n{ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        // Intenta abrir la base de datos con cada proveedor y devuelve la cadena de conexión válida o null
+        private string TryFindWorkingConnectionString(string rutaArchivo, List<string> providers)
+        {
+            foreach (var provider in providers)
+            {
+                var cs = $"Provider={provider};Data Source={rutaArchivo};";
+                try
+                {
+                    using (var cnn = new OleDbConnection(cs))
+                    {
+                        cnn.Open();
+                        cnn.Close();
+                        return cs; // proveedor válido
+                    }
+                }
+                catch
+                {
+                    // Ignorar y probar el siguiente proveedor
+                }
+            }
+            return null;
         }
 
         private void btnConsultar_Click(object sender, EventArgs e)

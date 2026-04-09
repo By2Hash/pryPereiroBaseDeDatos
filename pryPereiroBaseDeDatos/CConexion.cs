@@ -29,39 +29,73 @@ namespace pryPereiroBaseDeDatos
             string extension = Path.GetExtension(rutaArchivo).ToLower();
             string cadenaConexion = "";
 
-            
+            // Proveedores a intentar según la extensión
+            var providersToTry = new List<string>();
             if (extension == ".mdb")
             {
-                cadenaConexion = "Provider=Microsoft.Jet.OLEDB.4.0; Data Source=" + rutaArchivo;
+                providersToTry.Add("Microsoft.Jet.OLEDB.4.0");
+                providersToTry.Add("Microsoft.ACE.OLEDB.16.0");
+                providersToTry.Add("Microsoft.ACE.OLEDB.12.0");
             }
             else if (extension == ".accdb")
             {
-               
-                cadenaConexion = "Provider=Microsoft.ACE.OLEDB.12.0; Data Source=" + rutaArchivo;
+                providersToTry.Add("Microsoft.ACE.OLEDB.16.0");
+                providersToTry.Add("Microsoft.ACE.OLEDB.12.0");
             }
 
-            CNN.ConnectionString = cadenaConexion;
+            // Buscar un proveedor que funcione
+            foreach (var provider in providersToTry)
+            {
+                var csTry = $"Provider={provider};Data Source={rutaArchivo};";
+                try
+                {
+                    using (var cnnTry = new OleDbConnection(csTry))
+                    {
+                        cnnTry.Open();
+                        cnnTry.Close();
+                    }
+                    cadenaConexion = csTry;
+                    break;
+                }
+                catch
+                {
+                    // Ignorar y probar siguiente proveedor
+                }
+            }
+
+            if (string.IsNullOrEmpty(cadenaConexion))
+            {
+                ERROR = "No se encontró un proveedor OLEDB disponible para abrir el archivo. Instale Microsoft Access Database Engine (ACE) o use la plataforma correcta (x86/x64).";
+                return false;
+            }
 
             try
             {
-               
-                OleDbCommand cmd = new OleDbCommand();
-                cmd.Connection = CNN;
-                cmd.CommandType = CommandType.TableDirect;
-                cmd.CommandText = nombreTabla;
+                // Usar SELECT para mayor compatibilidad
+                var safeTable = nombreTabla;
+                if (!safeTable.StartsWith("[") && !safeTable.EndsWith("]"))
+                {
+                    safeTable = "[" + safeTable + "]";
+                }
 
-                OleDbDataAdapter da = new OleDbDataAdapter(cmd);
+                var query = "SELECT * FROM " + safeTable;
 
-                DS.Clear(); 
-                da.Fill(DS, nombreTabla);
-
-                grilla.DataSource = DS.Tables[nombreTabla];
-
-                resultado = true;
+                using (var conn = new OleDbConnection(cadenaConexion))
+                {
+                    using (var cmd = new OleDbCommand(query, conn))
+                    using (var da = new OleDbDataAdapter(cmd))
+                    {
+                        var table = new DataTable();
+                        da.Fill(table);
+                        grilla.DataSource = table;
+                        resultado = true;
+                    }
+                }
             }
             catch (Exception ex)
             {
-                ERROR = ex.Message; 
+                ERROR = ex.Message;
+                resultado = false;
             }
 
             return resultado;
@@ -69,7 +103,7 @@ namespace pryPereiroBaseDeDatos
 
         public string ObtenerError()
         {
-            return ERROR; 
+            return ERROR;
         }
     }
 }
